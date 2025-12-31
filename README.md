@@ -24,7 +24,7 @@
 - 🔥 **Streak Tracking** - Current and longest contribution streaks
 - 📈 **Contribution Graph** - Visual representation of your activity
 - 🗣️ **Top Languages** - Most used programming languages
-- 🎨 **Multiple Themes** - 6 beautiful themes to choose from
+- 🎨 **Multiple Themes** - 7 beautiful themes to choose from
 - ⚡ **Fast & Optimized** - Edge runtime with caching for quick loads
 - 📱 **Responsive** - Looks great on any device
 
@@ -69,6 +69,7 @@ Replace `YOUR_USERNAME` with your GitHub username.
 | Theme | Preview |
 |-------|---------|
 | `github_dark` | ![GitHub Dark](https://yourinsights.vercel.app/api/insight?username=nishatrhythm&theme=github_dark&graph=false&languages=false&streak=false&stats=false&header=false&summary=false&profile=true) |
+| `dark` | ![Dark](https://yourinsights.vercel.app/api/insight?username=nishatrhythm&theme=dark&graph=false&languages=false&streak=false&stats=false&header=false&summary=false&profile=true) |
 | `radical` | ![Radical](https://yourinsights.vercel.app/api/insight?username=nishatrhythm&theme=radical&graph=false&languages=false&streak=false&stats=false&header=false&summary=false&profile=true) |
 | `tokyonight` | ![Tokyo Night](https://yourinsights.vercel.app/api/insight?username=nishatrhythm&theme=tokyonight&graph=false&languages=false&streak=false&stats=false&header=false&summary=false&profile=true) |
 | `dracula` | ![Dracula](https://yourinsights.vercel.app/api/insight?username=nishatrhythm&theme=dracula&graph=false&languages=false&streak=false&stats=false&header=false&summary=false&profile=true) |
@@ -79,7 +80,7 @@ Replace `YOUR_USERNAME` with your GitHub username.
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 20+
 - GitHub Personal Access Token
 
 ### Setup
@@ -126,10 +127,10 @@ Replace `YOUR_USERNAME` with your GitHub username.
 
 ## Tech Stack
 
-- **Framework:** Next.js 14
+- **Framework:** Next.js 16
 - **Runtime:** Edge Runtime
 - **Language:** TypeScript
-- **Styling:** Inline CSS
+- **Styling:** Inline SVG
 - **API:** GitHub GraphQL API
 - **Deployment:** Vercel
 
