@@ -2,14 +2,8 @@
 export interface GitHubUser {
   login: string;
   name: string | null;
-  avatarUrl: string;
-  bio: string | null;
-  company: string | null;
   location: string | null;
-  websiteUrl: string | null;
-  twitterUsername: string | null;
   followers: { totalCount: number };
-  following: { totalCount: number };
   repositories: {
     totalCount: number;
     nodes: Repository[];
@@ -19,14 +13,12 @@ export interface GitHubUser {
 }
 
 export interface Repository {
-  name: string;
   stargazerCount: number;
   forkCount: number;
   primaryLanguage: {
     name: string;
     color: string;
   } | null;
-  isPrivate: boolean;
   isFork: boolean;
 }
 
@@ -34,7 +26,6 @@ export interface ContributionsCollection {
   totalCommitContributions: number;
   totalIssueContributions: number;
   totalPullRequestContributions: number;
-  totalPullRequestReviewContributions: number;
   totalRepositoryContributions: number;
   contributionCalendar: ContributionCalendar;
   contributionYears: number[];
@@ -52,8 +43,6 @@ export interface ContributionWeek {
 export interface ContributionDay {
   contributionCount: number;
   date: string;
-  color: string;
-  weekday: number;
 }
 
 export interface LanguageStats {
@@ -61,6 +50,12 @@ export interface LanguageStats {
   color: string;
   size: number;
   percentage: number;
+}
+
+export interface MonthlyContribution {
+  month: string;
+  label: string;
+  count: number;
 }
 
 export interface StreakInfo {
@@ -84,6 +79,7 @@ export interface GitHubStats {
   longestStreak: StreakInfo;
   accountCreatedAt: string;
   contributionData: ContributionDay[];
+  monthlyContributions: MonthlyContribution[];
   rank: string;
   rankPercentile: number;
 }

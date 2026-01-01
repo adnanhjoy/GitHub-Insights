@@ -93,7 +93,7 @@ function calculateGrade(stats: GitHubStats): { grade: string; color: string } {
 }
 
 function renderHeaderSection(stats: GitHubStats, theme: ThemeColors, startY: number, cardWidth: number, options: { showProfile?: boolean; showSummary?: boolean; showHeader?: boolean }): { svg: string; height: number } {
-  const { user, totalContributions, contributionData } = stats;
+  const { user, totalContributions, contributionData, monthlyContributions } = stats;
   const name = escapeHtml(user.name || user.login);
   const login = escapeHtml(user.login);
   const location = user.location ? escapeHtml(user.location) : '';
@@ -129,51 +129,30 @@ function renderHeaderSection(stats: GitHubStats, theme: ThemeColors, startY: num
     return { svg: '', height: 0 };
   }
   
-  // Group by month for the area chart
-  const monthlyData: { month: string; count: number }[] = [];
-  const monthMap = new Map<string, number>();
-  
-  contributionData.forEach(day => {
-    const date = new Date(day.date);
-    const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-    monthMap.set(monthKey, (monthMap.get(monthKey) || 0) + day.contributionCount);
-  });
-  
-  const sortedMonths = Array.from(monthMap.entries())
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .slice(-12);
-  
-  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  
-  sortedMonths.forEach(([month, count]) => {
-    const [year, m] = month.split('-');
-    monthlyData.push({
-      month: `${monthNames[parseInt(m) - 1]} '${year.slice(2)}`,
-      count
-    });
-  });
+  // Use pre-computed monthly data
+  const monthlyData = monthlyContributions;
 
   const graphWidth = 280;
   const graphHeight = 90;
   const maxCount = Math.max(...monthlyData.map(d => d.count), 1);
   
-  let areaPath = `M 0 ${graphHeight}`;
-  let linePath = 'M';
+  // Build paths using array for better performance
+  const areaPoints: string[] = [`M 0 ${graphHeight}`];
+  const linePoints: string[] = [];
   
   monthlyData.forEach((data, i) => {
     const x = (i / Math.max(monthlyData.length - 1, 1)) * graphWidth;
     const y = graphHeight - (data.count / maxCount) * (graphHeight - 15);
-    areaPath += ` L ${x} ${y}`;
-    linePath += `${i === 0 ? '' : ' L'} ${x} ${y}`;
+    areaPoints.push(`L ${x} ${y}`);
+    linePoints.push(`${i === 0 ? 'M' : 'L'} ${x} ${y}`);
   });
-  areaPath += ` L ${graphWidth} ${graphHeight} Z`;
-
-  // Calculate layout based on what's visible
-  let currentHeight = 0;
+  areaPoints.push(`L ${graphWidth} ${graphHeight} Z`);
   
+  const areaPath = areaPoints.join(' ');
+  const linePath = linePoints.join(' ');
+
   // Profile section (name & username)
   const profileSvg = showProfile ? `
-      <!-- Centered Username and Name -->
       <g transform="translate(${cardWidth / 2}, 0)">
         <text x="0" y="0" text-anchor="middle" font-size="28" font-weight="700" fill="${theme.accent}" font-family="${FONT_FAMILY}" letter-spacing="0.5">
           ${login}
@@ -243,13 +222,10 @@ function renderHeaderSection(stats: GitHubStats, theme: ThemeColors, startY: num
         
         <!-- X-axis labels -->
         <g transform="translate(0, ${graphHeight + 14})">
-          ${monthlyData.filter((_, i) => i % 4 === 0 || i === monthlyData.length - 1).map((data) => {
-            const i = monthlyData.indexOf(data);
-            return `
-            <text x="${(i / Math.max(monthlyData.length - 1, 1)) * graphWidth}" y="0" font-size="9" fill="${theme.textSecondary}" font-family="${FONT_FAMILY}" text-anchor="middle">
-              ${data.month}
-            </text>
-          `}).join('')}
+          ${monthlyData.filter((_, i) => i % 4 === 0 || i === monthlyData.length - 1).map((data, idx, arr) => {
+            const originalIdx = monthlyData.indexOf(data);
+            return `<text x="${(originalIdx / Math.max(monthlyData.length - 1, 1)) * graphWidth}" y="0" font-size="9" fill="${theme.textSecondary}" font-family="${FONT_FAMILY}" text-anchor="middle">${data.label}</text>`;
+          }).join('')}
         </g>
       </g>
   ` : '';
@@ -274,7 +250,7 @@ function renderHeaderSection(stats: GitHubStats, theme: ThemeColors, startY: num
 }
 
 function renderStatsCard(stats: GitHubStats, theme: ThemeColors, startY: number, startX: number = 40): { svg: string; height: number } {
-  const { user, totalStars, totalCommits, totalPRs, totalIssues, contributedRepos } = stats;
+  const { totalStars, totalCommits, totalPRs, totalIssues, contributedRepos } = stats;
   const { grade, color: gradeColor } = calculateGrade(stats);
 
   const statItems = [
@@ -285,54 +261,23 @@ function renderStatsCard(stats: GitHubStats, theme: ThemeColors, startY: number,
     { icon: 'fork' as const, label: 'Contributed To', value: contributedRepos, color: '#60a5fa' },
   ];
 
-  let svg = `
-    <!-- GitHub Stats Card -->
-    <g transform="translate(${startX}, ${startY})">
-      <rect x="0" y="0" width="377" height="200" rx="14" fill="${theme.cardBackground}" stroke="${theme.border}" stroke-width="1"/>
-      
-      <!-- Card Title -->
-      <g transform="translate(24, 28)">
-        ${renderIcon('activity', 0, -1, theme.accent, 18)}
-        <text x="28" y="13" font-size="16" font-weight="600" fill="${theme.title}" font-family="${FONT_FAMILY}" letter-spacing="0.3">
-          GitHub Stats
-        </text>
-      </g>
-      
-      <!-- Stats List -->
-      <g transform="translate(24, 60)">
-  `;
-
-  statItems.forEach((item, index) => {
+  // Build stats items using array.join() for better performance
+  const statsSvgParts = statItems.map((item, index) => {
     const y = index * 27;
-    svg += `
-        <g transform="translate(0, ${y})">
-          ${renderIcon(item.icon, 0, 0, item.color, 16)}
-          <text x="26" y="12" font-size="13" fill="${theme.textSecondary}" font-family="${FONT_FAMILY}" letter-spacing="0.3">
-            ${item.label}
-          </text>
-          <text x="230" y="12" font-size="14" font-weight="600" fill="${theme.text}" font-family="${FONT_FAMILY}" text-anchor="end" letter-spacing="0.2">
-            ${item.value.toLocaleString()}
-          </text>
-        </g>
-    `;
+    return `<g transform="translate(0, ${y})">${renderIcon(item.icon, 0, 0, item.color, 16)}<text x="26" y="12" font-size="13" fill="${theme.textSecondary}" font-family="${FONT_FAMILY}" letter-spacing="0.3">${item.label}</text><text x="230" y="12" font-size="14" font-weight="600" fill="${theme.text}" font-family="${FONT_FAMILY}" text-anchor="end" letter-spacing="0.2">${item.value.toLocaleString()}</text></g>`;
   });
 
-  svg += `
-      </g>
-      
-      <!-- Grade Rating -->
+  const svg = `<g transform="translate(${startX}, ${startY})">
+      <rect x="0" y="0" width="377" height="200" rx="14" fill="${theme.cardBackground}" stroke="${theme.border}" stroke-width="1"/>
+      <g transform="translate(24, 28)">${renderIcon('activity', 0, -1, theme.accent, 18)}<text x="28" y="13" font-size="16" font-weight="600" fill="${theme.title}" font-family="${FONT_FAMILY}" letter-spacing="0.3">GitHub Stats</text></g>
+      <g transform="translate(24, 60)">${statsSvgParts.join('')}</g>
       <g transform="translate(290, 62)">
         <circle cx="36" cy="36" r="42" fill="${theme.background}" stroke="${gradeColor}" stroke-width="3"/>
         <circle cx="36" cy="36" r="34" fill="${gradeColor}" opacity="0.12"/>
-        <text x="36" y="44" text-anchor="middle" font-size="28" font-weight="700" fill="${gradeColor}" font-family="${FONT_FAMILY}" letter-spacing="0.5">
-          ${grade}
-        </text>
+        <text x="36" y="44" text-anchor="middle" font-size="28" font-weight="700" fill="${gradeColor}" font-family="${FONT_FAMILY}" letter-spacing="0.5">${grade}</text>
       </g>
-      <text x="326" y="168" text-anchor="middle" font-size="12" font-weight="500" fill="${theme.textSecondary}" font-family="${FONT_FAMILY}" letter-spacing="0.3">
-        Rating
-      </text>
-    </g>
-  `;
+      <text x="326" y="168" text-anchor="middle" font-size="12" font-weight="500" fill="${theme.textSecondary}" font-family="${FONT_FAMILY}" letter-spacing="0.3">Rating</text>
+    </g>`;
 
   return { svg, height: 218 };
 }
@@ -350,7 +295,7 @@ function renderLanguagesCard(stats: GitHubStats, theme: ThemeColors, startY: num
 
   // Calculate widths and create clip path for proper rounding
   let currentX = 0;
-  const segments: { x: number; width: number; color: string; isFirst: boolean; isLast: boolean }[] = [];
+  const segments: { x: number; width: number; color: string }[] = [];
   
   const topLangs = languages.slice(0, 8);
   const validLangs = topLangs.filter(lang => (lang.percentage / 100) * barWidth > 0.5);
@@ -358,102 +303,43 @@ function renderLanguagesCard(stats: GitHubStats, theme: ThemeColors, startY: num
   // Calculate total percentage to normalize
   const totalPercentage = validLangs.reduce((sum, lang) => sum + lang.percentage, 0);
   
-  validLangs.forEach((lang, index) => {
-    // Normalize percentage to ensure segments fill entire bar
+  for (let index = 0; index < validLangs.length; index++) {
+    const lang = validLangs[index];
     const normalizedPercentage = (lang.percentage / totalPercentage) * 100;
     const width = (normalizedPercentage / 100) * barWidth;
-    
-    // For the last segment, fill remaining space to avoid gaps
-    const actualWidth = index === validLangs.length - 1 
-      ? barWidth - currentX 
-      : width;
-    
-    segments.push({
-      x: currentX,
-      width: actualWidth,
-      color: lang.color,
-      isFirst: index === 0,
-      isLast: index === validLangs.length - 1
-    });
+    const actualWidth = index === validLangs.length - 1 ? barWidth - currentX : width;
+    segments.push({ x: currentX, width: actualWidth, color: lang.color });
     currentX += actualWidth;
-  });
+  }
 
-  let svg = `
-    <!-- Languages Card -->
-    <g transform="translate(${startX}, ${startY})">
-      <rect x="0" y="0" width="377" height="200" rx="14" fill="${theme.cardBackground}" stroke="${theme.border}" stroke-width="1"/>
-      
-      <!-- Card Title -->
-      <g transform="translate(24, 28)">
-        ${renderIcon('code', 0, -1, theme.accent, 18)}
-        <text x="28" y="13" font-size="16" font-weight="600" fill="${theme.title}" font-family="${FONT_FAMILY}" letter-spacing="0.3">
-          Most Used Languages
-        </text>
-      </g>
-      
-      <!-- Language Bar with proper clip path -->
-      <g transform="translate(24, 60)">
-        <defs>
-          <clipPath id="langBarClip">
-            <rect x="0" y="0" width="${barWidth}" height="${barHeight}" rx="${borderRadius}"/>
-          </clipPath>
-        </defs>
-        <rect x="0" y="0" width="${barWidth}" height="${barHeight}" rx="${borderRadius}" fill="${theme.background}"/>
-        <g clip-path="url(#langBarClip)">
-  `;
-
-  // Render segments without individual rounded corners - the clip-path handles rounding
-  segments.forEach((seg) => {
-    svg += `
-          <rect x="${seg.x}" y="0" width="${seg.width}" height="${barHeight}" fill="${seg.color}"/>
-    `;
-  });
-
-  svg += `
-        </g>
-      </g>
-      
-      <!-- Language Labels -->
-      <g transform="translate(24, 88)">
-  `;
+  // Build using array.join() for better performance
+  const segmentsSvg = segments.map(seg => 
+    `<rect x="${seg.x}" y="0" width="${seg.width}" height="${barHeight}" fill="${seg.color}"/>`
+  ).join('');
 
   const leftColumn = topLangs.filter((_, i) => i % 2 === 0);
   const rightColumn = topLangs.filter((_, i) => i % 2 === 1);
 
-  leftColumn.forEach((lang, index) => {
+  const leftLangsSvg = leftColumn.map((lang, index) => {
     const y = index * 27;
-    svg += `
-        <g transform="translate(0, ${y})">
-          <circle cx="6" cy="7" r="5" fill="${lang.color}"/>
-          <text x="20" y="11" font-size="12" font-weight="500" fill="${theme.text}" font-family="${FONT_FAMILY}" letter-spacing="0.3">
-            ${escapeHtml(lang.name)}
-          </text>
-          <text x="155" y="11" font-size="12" fill="${theme.textSecondary}" font-family="${FONT_FAMILY}" text-anchor="end" letter-spacing="0.2">
-            ${lang.percentage.toFixed(1)}%
-          </text>
-        </g>
-    `;
-  });
+    return `<g transform="translate(0, ${y})"><circle cx="6" cy="7" r="5" fill="${lang.color}"/><text x="20" y="11" font-size="12" font-weight="500" fill="${theme.text}" font-family="${FONT_FAMILY}" letter-spacing="0.3">${escapeHtml(lang.name)}</text><text x="155" y="11" font-size="12" fill="${theme.textSecondary}" font-family="${FONT_FAMILY}" text-anchor="end" letter-spacing="0.2">${lang.percentage.toFixed(1)}%</text></g>`;
+  }).join('');
 
-  rightColumn.forEach((lang, index) => {
+  const rightLangsSvg = rightColumn.map((lang, index) => {
     const y = index * 27;
-    svg += `
-        <g transform="translate(175, ${y})">
-          <circle cx="6" cy="7" r="5" fill="${lang.color}"/>
-          <text x="20" y="11" font-size="12" font-weight="500" fill="${theme.text}" font-family="${FONT_FAMILY}" letter-spacing="0.3">
-            ${escapeHtml(lang.name)}
-          </text>
-          <text x="155" y="11" font-size="12" fill="${theme.textSecondary}" font-family="${FONT_FAMILY}" text-anchor="end" letter-spacing="0.2">
-            ${lang.percentage.toFixed(1)}%
-          </text>
-        </g>
-    `;
-  });
+    return `<g transform="translate(175, ${y})"><circle cx="6" cy="7" r="5" fill="${lang.color}"/><text x="20" y="11" font-size="12" font-weight="500" fill="${theme.text}" font-family="${FONT_FAMILY}" letter-spacing="0.3">${escapeHtml(lang.name)}</text><text x="155" y="11" font-size="12" fill="${theme.textSecondary}" font-family="${FONT_FAMILY}" text-anchor="end" letter-spacing="0.2">${lang.percentage.toFixed(1)}%</text></g>`;
+  }).join('');
 
-  svg += `
+  const svg = `<g transform="translate(${startX}, ${startY})">
+      <rect x="0" y="0" width="377" height="200" rx="14" fill="${theme.cardBackground}" stroke="${theme.border}" stroke-width="1"/>
+      <g transform="translate(24, 28)">${renderIcon('code', 0, -1, theme.accent, 18)}<text x="28" y="13" font-size="16" font-weight="600" fill="${theme.title}" font-family="${FONT_FAMILY}" letter-spacing="0.3">Most Used Languages</text></g>
+      <g transform="translate(24, 60)">
+        <defs><clipPath id="langBarClip"><rect x="0" y="0" width="${barWidth}" height="${barHeight}" rx="${borderRadius}"/></clipPath></defs>
+        <rect x="0" y="0" width="${barWidth}" height="${barHeight}" rx="${borderRadius}" fill="${theme.background}"/>
+        <g clip-path="url(#langBarClip)">${segmentsSvg}</g>
       </g>
-    </g>
-  `;
+      <g transform="translate(24, 88)">${leftLangsSvg}${rightLangsSvg}</g>
+    </g>`;
 
   return { svg, height: 218 };
 }
@@ -555,7 +441,7 @@ function renderContributionLineGraph(stats: GitHubStats, theme: ThemeColors, sta
   const lastDate = new Date(last31Days[last31Days.length - 1].date);
   const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   
-  let monthLabel = '';
+  let monthLabel: string;
   if (firstDate.getMonth() === lastDate.getMonth() && firstDate.getFullYear() === lastDate.getFullYear()) {
     monthLabel = `${months[firstDate.getMonth()]} ${firstDate.getFullYear()}`;
   } else if (firstDate.getFullYear() === lastDate.getFullYear()) {
@@ -569,71 +455,54 @@ function renderContributionLineGraph(stats: GitHubStats, theme: ThemeColors, sta
   const graphHeight = 80;
   const maxCount = Math.max(...last31Days.map(d => d.contributionCount), 1);
   
-  let linePath = 'M';
-  const points: { x: number; y: number; count: number; date: string }[] = [];
+  // Build path and points using arrays for better performance
+  const linePathParts: string[] = [];
+  const points: { x: number; y: number; date: string }[] = [];
   
-  last31Days.forEach((day, i) => {
+  for (let i = 0; i < last31Days.length; i++) {
+    const day = last31Days[i];
     const x = (i / Math.max(last31Days.length - 1, 1)) * graphWidth;
     const y = graphHeight - (day.contributionCount / maxCount) * (graphHeight - 10);
-    points.push({ x, y, count: day.contributionCount, date: day.date });
-    linePath += `${i === 0 ? '' : ' L'} ${x} ${y}`;
-  });
+    points.push({ x, y, date: day.date });
+    linePathParts.push(`${i === 0 ? 'M' : 'L'} ${x} ${y}`);
+  }
+  
+  const linePath = linePathParts.join(' ');
 
-  let svg = `
-    <!-- Contribution Line Graph -->
-    <g transform="translate(40, ${startY})">
+  // Build data points SVG
+  const dataPointsSvg = points
+    .filter((_, i) => i % 5 === 0 || i === points.length - 1)
+    .map(p => `<circle cx="${p.x}" cy="${p.y}" r="4" fill="${theme.accent}" stroke="${theme.cardBackground}" stroke-width="2"/>`)
+    .join('');
+
+  // Build x-axis labels
+  const xAxisLabelsSvg = points
+    .filter((_, i) => i % 7 === 0 || i === points.length - 1)
+    .map(p => {
+      const date = new Date(p.date);
+      return `<text x="${p.x}" y="0" text-anchor="middle" font-size="10" fill="${theme.textSecondary}" font-family="${FONT_FAMILY}" letter-spacing="0.2">${date.getDate()}</text>`;
+    })
+    .join('');
+
+  const svg = `<g transform="translate(40, ${startY})">
       <rect x="0" y="0" width="${innerWidth}" height="${graphHeight + 80}" rx="14" fill="${theme.cardBackground}" stroke="${theme.border}" stroke-width="1"/>
-      
-      <!-- Title with month -->
-      <g transform="translate(24, 26)">
-        ${renderIcon('history', 0, -1, theme.accent, 18)}
-        <text x="28" y="13" font-size="15" font-weight="600" fill="${theme.title}" font-family="${FONT_FAMILY}" letter-spacing="0.3">
-          Contribution Activity
-        </text>
-        <text x="28" y="34" font-size="12" fill="${theme.textSecondary}" font-family="${FONT_FAMILY}" letter-spacing="0.2">
-          Daily contributions · ${monthLabel}
-        </text>
-      </g>
-      
-      <!-- Y-axis -->
+      <g transform="translate(24, 26)">${renderIcon('history', 0, -1, theme.accent, 18)}<text x="28" y="13" font-size="15" font-weight="600" fill="${theme.title}" font-family="${FONT_FAMILY}" letter-spacing="0.3">Contribution Activity</text><text x="28" y="34" font-size="12" fill="${theme.textSecondary}" font-family="${FONT_FAMILY}" letter-spacing="0.2">Daily contributions · ${monthLabel}</text></g>
       <g transform="translate(36, 62)">
         <text x="0" y="5" font-size="10" fill="${theme.textSecondary}" text-anchor="end" font-family="${FONT_FAMILY}" letter-spacing="0.2">${maxCount}</text>
         <text x="0" y="${graphHeight / 2 + 2}" font-size="10" fill="${theme.textSecondary}" text-anchor="end" font-family="${FONT_FAMILY}" letter-spacing="0.2">${Math.round(maxCount / 2)}</text>
         <text x="0" y="${graphHeight - 3}" font-size="10" fill="${theme.textSecondary}" text-anchor="end" font-family="${FONT_FAMILY}" letter-spacing="0.2">0</text>
-        
-        <!-- Grid lines -->
         <line x1="10" y1="0" x2="${graphWidth + 12}" y2="0" stroke="${theme.border}" stroke-width="0.5" stroke-dasharray="4,2" opacity="0.4"/>
         <line x1="10" y1="${graphHeight / 2}" x2="${graphWidth + 12}" y2="${graphHeight / 2}" stroke="${theme.border}" stroke-width="0.5" stroke-dasharray="4,2" opacity="0.4"/>
         <line x1="10" y1="${graphHeight}" x2="${graphWidth + 12}" y2="${graphHeight}" stroke="${theme.border}" stroke-width="0.5"/>
       </g>
-      
-      <!-- Graph -->
       <g transform="translate(52, 62)">
-        <defs>
-          <linearGradient id="graphGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" style="stop-color:${theme.accent};stop-opacity:0.3" />
-            <stop offset="100%" style="stop-color:${theme.accent};stop-opacity:0.02" />
-          </linearGradient>
-        </defs>
-        
-        <path d="${linePath} L ${graphWidth} ${graphHeight} L 0 ${graphHeight} Z" fill="url(#graphGradient)" />
+        <defs><linearGradient id="graphGradient" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" style="stop-color:${theme.accent};stop-opacity:0.3"/><stop offset="100%" style="stop-color:${theme.accent};stop-opacity:0.02"/></linearGradient></defs>
+        <path d="${linePath} L ${graphWidth} ${graphHeight} L 0 ${graphHeight} Z" fill="url(#graphGradient)"/>
         <path d="${linePath}" fill="none" stroke="${theme.accent}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-        
-        <!-- Data points -->
-        ${points.filter((_, i) => i % 5 === 0 || i === points.length - 1).map(p => `
-          <circle cx="${p.x}" cy="${p.y}" r="4" fill="${theme.accent}" stroke="${theme.cardBackground}" stroke-width="2"/>
-        `).join('')}
+        ${dataPointsSvg}
       </g>
-      
-      <!-- X-axis labels with day numbers -->
-      <g transform="translate(52, ${graphHeight + 72})">
-        ${points.filter((_, i) => i % 7 === 0 || i === points.length - 1).map((p) => {
-          const date = new Date(p.date);
-          return `<text x="${p.x}" y="0" text-anchor="middle" font-size="10" fill="${theme.textSecondary}" font-family="${FONT_FAMILY}" letter-spacing="0.2">${date.getDate()}</text>`;
-        }).join('')}
-      </g>
-    </g>
-  `;
+      <g transform="translate(52, ${graphHeight + 72})">${xAxisLabelsSvg}</g>
+    </g>`;
 
   return { svg, height: graphHeight + 98 };
 }

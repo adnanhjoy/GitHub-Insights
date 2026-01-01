@@ -1,49 +1,56 @@
-import { GitHubUser, GitHubStats, LanguageStats, ContributionDay, StreakInfo } from '@/types/github';
+import { GitHubUser, GitHubStats, LanguageStats, ContributionDay, StreakInfo, MonthlyContribution } from '@/types/github';
 
 const GITHUB_GRAPHQL_API = 'https://api.github.com/graphql';
+
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// Pre-compute monthly contributions from daily data
+function computeMonthlyContributions(contributionDays: ContributionDay[]): MonthlyContribution[] {
+  const monthMap = new Map<string, number>();
+  
+  for (const day of contributionDays) {
+    const date = new Date(day.date);
+    const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+    monthMap.set(monthKey, (monthMap.get(monthKey) || 0) + day.contributionCount);
+  }
+  
+  return Array.from(monthMap.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .slice(-12)
+    .map(([month, count]) => {
+      const [year, m] = month.split('-');
+      return {
+        month,
+        label: `${MONTH_NAMES[parseInt(m) - 1]} '${year.slice(2)}`,
+        count
+      };
+    });
+}
 
 const USER_QUERY = `
 query($username: String!) {
   user(login: $username) {
     login
     name
-    avatarUrl
-    bio
-    company
     location
-    websiteUrl
-    twitterUsername
     followers { totalCount }
-    following { totalCount }
     createdAt
     repositories(first: 100, ownerAffiliations: OWNER, orderBy: {field: STARGAZERS, direction: DESC}, privacy: PUBLIC) {
       totalCount
       nodes {
-        name
         stargazerCount
         forkCount
         primaryLanguage {
           name
           color
         }
-        isPrivate
         isFork
-        languages(first: 10, orderBy: {field: SIZE, direction: DESC}) {
-          edges {
-            size
-            node {
-              name
-              color
-            }
-          }
-        }
       }
     }
     contributionsCollection {
       totalCommitContributions
       totalIssueContributions
       totalPullRequestContributions
-      totalPullRequestReviewContributions
       totalRepositoryContributions
       contributionCalendar {
         totalContributions
@@ -51,8 +58,6 @@ query($username: String!) {
           contributionDays {
             contributionCount
             date
-            color
-            weekday
           }
         }
       }
@@ -68,13 +73,10 @@ async function fetchYearContributions(username: string, year: number, token: str
       user(login: $username) {
         contributionsCollection(from: $from, to: $to) {
           contributionCalendar {
-            totalContributions
             weeks {
               contributionDays {
                 contributionCount
                 date
-                color
-                weekday
               }
             }
           }
@@ -437,6 +439,7 @@ export async function fetchGitHubStats(username: string): Promise<GitHubStats> {
       longestStreak: streaks.longest,
       accountCreatedAt: user.createdAt,
       contributionData: contributionDays,
+      monthlyContributions: computeMonthlyContributions(contributionDays),
       rank,
       rankPercentile: percentile,
     };

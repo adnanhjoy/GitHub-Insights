@@ -97,6 +97,7 @@ export default function Home() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [hasError, setHasError] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   
   // Ref for the username input field
   const usernameInputRef = useRef<HTMLInputElement>(null);
@@ -113,6 +114,11 @@ export default function Home() {
     setIsMounted(true);
     if (typeof window !== 'undefined') {
       setBaseUrl(window.location.origin);
+      // Detect mobile
+      const checkMobile = () => setIsMobile(window.innerWidth < 768);
+      checkMobile();
+      window.addEventListener('resize', checkMobile);
+      return () => window.removeEventListener('resize', checkMobile);
     }
     // Cleanup timeout on unmount
     return () => {
@@ -681,7 +687,7 @@ export default function Home() {
                     textAlign: 'center',
                     zIndex: 10,
                     backgroundColor: 'rgba(1, 4, 9, 0.8)',
-                    padding: '24px',
+                    padding: isMobile ? '16px 12px' : '24px',
                     borderRadius: '8px',
                   }}>
                     <div style={{
